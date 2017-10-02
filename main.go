@@ -171,7 +171,7 @@ func receiveSMSHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	} else if body[:3] == "jul" {
 		mess.Body = "Du är nu med i jullotteriet!"
-		if len(body) < 5555555555555555555555555555555555555555555555555555555 {
+		if len(body) < 5 {
 			mess.Body = "Du måste ange ett namn också (skriv JUL ditt namn)"
 		} else {
 			ok := addMember(body, sender)
