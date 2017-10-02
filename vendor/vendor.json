@@ -1,0 +1,19 @@
+{
+	"comment": "",
+	"ignore": "test",
+	"package": [
+		{
+			"checksumSHA1": "zTTRBoeEsnxpyV/m2UL8WAaf8Nc=",
+			"path": "bitbucket.org/ckvist/twilio/twiml",
+			"revision": "13c593a1721b772a2dd9a80baab47fd28095a3f3",
+			"revisionTime": "2017-05-12T07:21:34Z"
+		},
+		{
+			"checksumSHA1": "qH72tmm2wZSS6za882/n+heV5hE=",
+			"path": "bitbucket.org/ckvist/twilio/twirest",
+			"revision": "13c593a1721b772a2dd9a80baab47fd28095a3f3",
+			"revisionTime": "2017-05-12T07:21:34Z"
+		}
+	],
+	"rootPath": "github.com/freahs/jullotteri"
+}
