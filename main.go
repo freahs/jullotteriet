@@ -163,12 +163,14 @@ func receiveSMSHandler(w http.ResponseWriter, r *http.Request) {
 
 	} else if body == "avbryt" {
 		mess.Body = "Du är borttagen från jullotteriet"
-		if ok := removeMember(sender); !ok {
+		ok := removeMember(sender)
+		if !ok {
 			mess.Body = "Kunde inte ta bort dig från jullotteriet, kanske är du inte registrerad?"
 		}
 	} else {
 		mess.Body = "Du är nu med i jullotteriet!"
-		if ok := addMember(body, sender); !ok {
+		ok := addMember(body, sender)
+		if !ok {
 			mess.Body = "Kunde inte lägga till dig till jullotteriet, kanske är du redan registrerad?"
 		}
 	}
