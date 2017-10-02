@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 )
 
 import (
@@ -41,6 +42,7 @@ func main() {
 
 	r := mux.NewRouter()
 	r.HandleFunc("/", defaultHandler)
+	r.HandleFunc("/test", testHandler)
 	r.HandleFunc("/sms/receive", receiveSMSHandler)
 
 	// Bind to a port and pass our router in
@@ -49,6 +51,16 @@ func main() {
 
 func defaultHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Nothing here\n"))
+}
+
+func testHandler(w http.ResponseWriter, r *http.Request) {
+	insert, err := addMember("test", "asdf")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	} else {
+		fmt.Fprintf(w, "%v", insert)
+	}
+
 }
 
 func sendSMS(to string) {
@@ -71,35 +83,75 @@ func sendSMS(to string) {
 	log.Printf("SMS sent successfully. Response:\n%#v", resp.Message)
 }
 
-func addMember(name, number string) {
+func addMember(name, number string) (bool, error) {
 	if _, err := db.Exec("CREATE TABLE IF NOT EXISTS members (name VARCHAR NOT NULL PRIMARY KEY, number VARCHAR)"); err != nil {
-		log.Printf("Error creating database table: %q", err)
-		return
+		return false, fmt.Errorf("Error creating database table: %q", err)
 	}
+
+	var num_rows int
+	if err := db.QueryRow("SELECT count(*) FROM members WHERE name=$1", name).Scan(&num_rows); err != nil {
+		return false, fmt.Errorf("Error querying db: %q", err)
+	}
+
+	if num_rows == 0 {
+		if _, err := db.Exec("INSERT INTO members VALUES ($1, $2)", name, number); err != nil {
+			return false, fmt.Errorf("Error insert into db: %q", err)
+		}
+	} else {
+		return false, nil
+	}
+
+	return true, nil
+}
+
+func getMembers() ([]string, error) {
+	rows, err := db.Query("SELECT * FROM members")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var members []string
+	for rows.Next() {
+		var m string
+		if err := rows.Scan(&m); err != nil {
+			return nil, err
+		}
+
+		members = append(members, m)
+	}
+	return members, nil
+
 }
 
 func receiveSMSHandler(w http.ResponseWriter, r *http.Request) {
 	sender := r.FormValue("From")
-	body := r.FormValue("Body")
-	/*
-		var num_rows int
-		db.QueryRow("SELECT COUNT(*) FROM members WHERE name=$1", name).Scan(&num_rows)
-		if num_rows == 0 {
-			if _, err := db.Exec("INSERT INTO members VALUES($1, $2)", name, email); err != nil {
-				log.Fatalf("Couldn't perform insert. %v", err)
-			}
-		}
+	body := strings.ToLower(r.FormValue("Body"))
 
-		mod := gmail.ModifyMessageRequest{RemoveLabelIds: []string{"UNREAD"}}
-		if _, err := srv.Users.Messages.Modify("me", m.Id, &mod).Do(); err != nil {
-			log.Fatalf("Couldn't remove unread label from email. %v", err)
-		}
-	*/
-	resp := twiml.NewResponse()
-	resp.Action(twiml.Message{
-		Body: fmt.Sprintf("Hello, %s, you said: %s", sender, body),
+	mess := twiml.Message{
 		From: twilioNumber,
 		To:   sender,
-	})
+	}
+
+	if body == "lista" {
+		m, err := getMembers()
+		if err != nil {
+			log.Printf("Error while getting members: %q", err)
+			mess.Body = "Något gick fel :("
+		} else {
+			str := "Deltagare i jullotteriet: "
+			for i := 0; i < len(m); i++ {
+				str = str + m[i]
+				if i < len(m)-1 {
+					str = str + ", "
+				}
+			}
+			mess.Body = str
+		}
+
+	} else if body == "avbryt" {
+	} else {
+	}
+	resp := twiml.NewResponse()
+	resp.Action(mess)
 	resp.Send(w)
 }
