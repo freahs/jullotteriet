@@ -105,7 +105,7 @@ func addMember(name, number string) (bool, error) {
 }
 
 func getMembers() ([]string, error) {
-	rows, err := db.Query("SELECT * FROM members")
+	rows, err := db.Query("SELECT name FROM members")
 	if err != nil {
 		return nil, err
 	}
