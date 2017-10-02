@@ -174,7 +174,7 @@ func receiveSMSHandler(w http.ResponseWriter, r *http.Request) {
 		if len(body) < 5 {
 			mess.Body = "Du måste ange ett namn också (skriv JUL ditt namn)"
 		} else {
-			ok := addMember(body, sender)
+			ok := addMember(body[4:], sender)
 			if !ok {
 				mess.Body = "Kunde inte lägga till dig till jullotteriet, kanske är du redan registrerad?"
 			}
