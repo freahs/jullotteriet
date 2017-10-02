@@ -80,21 +80,23 @@ func sendSMS(to string) {
 }
 
 func addMember(name, number string) bool {
-	if _, err := db.Exec("CREATE TABLE IF NOT EXISTS members (name VARCHAR NOT NULL PRIMARY KEY, number VARCHAR)"); err != nil {
+	if _, err := db.Exec("CREATE TABLE IF NOT EXISTS members (number VARCHAR NOT NULL PRIMARY KEY, name VARCHAR)"); err != nil {
 		log.Printf("addMember: %q", err)
 		return false
 	}
 
 	var num_rows int
-	if err := db.QueryRow("SELECT count(*) FROM members WHERE name=$1", name).Scan(&num_rows); err != nil {
+	if err := db.QueryRow("SELECT count(*) FROM members WHERE number=$1", number).Scan(&num_rows); err != nil {
 		log.Printf("addMember: %q", err)
 		return false
 	}
 
-	if num_rows == 0 {
-		if _, err := db.Exec("INSERT INTO members VALUES ($1, $2)", name, number); err != nil {
-			log.Printf("addMember: %q", err)
-		}
+	if num_rows != 0 {
+		return false
+	}
+
+	if _, err := db.Exec("INSERT INTO members VALUES ($1, $2)", number, name); err != nil {
+		log.Printf("addMember: %q", err)
 		return false
 	}
 
@@ -167,11 +169,15 @@ func receiveSMSHandler(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			mess.Body = "Kunde inte ta bort dig från jullotteriet, kanske är du inte registrerad?"
 		}
-	} else {
+	} else if body[:3] == "jul" {
 		mess.Body = "Du är nu med i jullotteriet!"
-		ok := addMember(body, sender)
-		if !ok {
-			mess.Body = "Kunde inte lägga till dig till jullotteriet, kanske är du redan registrerad?"
+		if len(body[4:]) == 0 {
+			mess.Body = "Du måste ange ett namn också (skriv JUL ditt namn)"
+		} else {
+			ok := addMember(body, sender)
+			if !ok {
+				mess.Body = "Kunde inte lägga till dig till jullotteriet, kanske är du redan registrerad?"
+			}
 		}
 	}
 	resp := twiml.NewResponse()
