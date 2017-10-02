@@ -54,12 +54,8 @@ func defaultHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func testHandler(w http.ResponseWriter, r *http.Request) {
-	insert, err := addMember("test", "asdf")
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	} else {
-		fmt.Fprintf(w, "%v", insert)
-	}
+	insert := addMember("test", "asdf")
+	fmt.Fprintf(w, "%v", insert)
 
 }
 
@@ -83,25 +79,42 @@ func sendSMS(to string) {
 	log.Printf("SMS sent successfully. Response:\n%#v", resp.Message)
 }
 
-func addMember(name, number string) (bool, error) {
+func addMember(name, number string) bool {
 	if _, err := db.Exec("CREATE TABLE IF NOT EXISTS members (name VARCHAR NOT NULL PRIMARY KEY, number VARCHAR)"); err != nil {
-		return false, fmt.Errorf("Error creating database table: %q", err)
+		log.Printf("addMember: %q", err)
+		return false
 	}
 
 	var num_rows int
 	if err := db.QueryRow("SELECT count(*) FROM members WHERE name=$1", name).Scan(&num_rows); err != nil {
-		return false, fmt.Errorf("Error querying db: %q", err)
+		log.Printf("addMember: %q", err)
+		return false
 	}
 
 	if num_rows == 0 {
 		if _, err := db.Exec("INSERT INTO members VALUES ($1, $2)", name, number); err != nil {
-			return false, fmt.Errorf("Error insert into db: %q", err)
+			log.Printf("addMember: %q", err)
 		}
-	} else {
-		return false, nil
+		return false
 	}
 
-	return true, nil
+	return true
+}
+
+func removeMember(number string) bool {
+	var num_rows int
+	if err := db.QueryRow("SELECT count(*) FROM members WHERE number=$1", number).Scan(&num_rows); err != nil {
+		log.Printf("removeMember: %q", err)
+		return false
+	}
+	if num_rows == 0 {
+		return false
+	}
+	if _, err := db.Exec("DELETE FROM members WHERE number=$1", number); err != nil {
+		log.Printf("removeMember: %q", err)
+		return false
+	}
+	return true
 }
 
 func getMembers() ([]string, error) {
@@ -149,7 +162,15 @@ func receiveSMSHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 	} else if body == "avbryt" {
+		mess.Body = "Du är borttagen från jullotteriet"
+		if ok := removeMember(sender); !ok {
+			mess.Body = "Kunde inte ta bort dig från jullotteriet, kanske är du inte registrerad?"
+		}
 	} else {
+		mess.Body = "Du är nu med i jullotteriet!"
+		if ok := addMember(body, sender); !ok {
+			mess.Body = "Kunde inte lägga till dig till jullotteriet, kanske är du redan registrerad?"
+		}
 	}
 	resp := twiml.NewResponse()
 	resp.Action(mess)
