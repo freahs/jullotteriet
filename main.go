@@ -1,8 +1,3 @@
-// Copyright 2015 Google Inc. All rights reserved.
-// Use of this source code is governed by the Apache 2.0
-// license that can be found in the LICENSE file.
-
-// Sample twilio demonstrates sending and receiving SMS, receiving calls via Twilio from App Engine flexible environment.
 package main
 
 import (
@@ -10,30 +5,22 @@ import (
 	"log"
 	"net/http"
 	"os"
-
-	"google.golang.org/appengine"
 )
 
-// [START import]
 import (
 	"bitbucket.org/ckvist/twilio/twiml"
 	"bitbucket.org/ckvist/twilio/twirest"
+	"database/sql"
+	"github.com/gorilla/mux"
+	_ "github.com/lib/pq"
 )
-
-// [END import]
-
-func main() {
-	http.HandleFunc("/sms/receive", receiveSMSHandler)
-	//sendSMS("+46720258512")
-
-	appengine.Main()
-}
 
 var (
 	twilioClient = twirest.NewClient(
 		mustGetenv("TWILIO_ACCOUNT_SID"),
 		mustGetenv("TWILIO_AUTH_TOKEN"))
 	twilioNumber = mustGetenv("TWILIO_NUMBER")
+	db           *sql.DB
 )
 
 func mustGetenv(k string) string {
@@ -42,6 +29,25 @@ func mustGetenv(k string) string {
 		log.Fatalf("%s environment variable not set.", k)
 	}
 	return v
+}
+
+func main() {
+	db, err = sql.Open("postgres", mustGetenv("DATABASE_URL"))
+	if err != nil {
+		log.Fatalf("Error opening database: %q", err)
+	}
+	//sendSMS("+46720258512")
+
+	r := mux.NewRouter()
+	r.HandleFunc("/", defaultHandler)
+	r.HandleFunc("/sms/receive", receiveSMSHandler)
+
+	// Bind to a port and pass our router in
+	log.Fatal(http.ListenAndServe(":"+mustGetenv("PORT"), r))
+}
+
+func defaultHandler(w http.ResponseWriter, r *http.Request) {
+	w.Write([]byte("Nothing here\n"))
 }
 
 func sendSMS(to string) {

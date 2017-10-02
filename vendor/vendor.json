@@ -13,6 +13,30 @@
 			"path": "bitbucket.org/ckvist/twilio/twirest",
 			"revision": "13c593a1721b772a2dd9a80baab47fd28095a3f3",
 			"revisionTime": "2017-05-12T07:21:34Z"
+		},
+		{
+			"checksumSHA1": "g/V4qrXjUGG9B+e3hB+4NAYJ5Gs=",
+			"path": "github.com/gorilla/context",
+			"revision": "08b5f424b9271eedf6f9f0ce86cb9396ed337a42",
+			"revisionTime": "2016-08-17T18:46:32Z"
+		},
+		{
+			"checksumSHA1": "HEEx7LDDtZ8vwZauJtzdTc/uDa8=",
+			"path": "github.com/gorilla/mux",
+			"revision": "3f19343c7d9ce75569b952758bd236af94956061",
+			"revisionTime": "2017-09-22T20:54:14Z"
+		},
+		{
+			"checksumSHA1": "/mlelB9eP/TxbND7uBtxVrLF1Ik=",
+			"path": "github.com/lib/pq",
+			"revision": "b77235e3890a962fe8a6f8c4c7198679ca7814e7",
+			"revisionTime": "2017-09-22T17:26:34Z"
+		},
+		{
+			"checksumSHA1": "AU3fA8Sm33Vj9PBoRPSeYfxLRuE=",
+			"path": "github.com/lib/pq/oid",
+			"revision": "b77235e3890a962fe8a6f8c4c7198679ca7814e7",
+			"revisionTime": "2017-09-22T17:26:34Z"
 		}
 	],
 	"rootPath": "github.com/freahs/jullotteri"
