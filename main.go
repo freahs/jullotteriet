@@ -32,6 +32,7 @@ func mustGetenv(k string) string {
 }
 
 func main() {
+	var err error
 	db, err = sql.Open("postgres", mustGetenv("DATABASE_URL"))
 	if err != nil {
 		log.Fatalf("Error opening database: %q", err)
@@ -70,22 +71,30 @@ func sendSMS(to string) {
 	log.Printf("SMS sent successfully. Response:\n%#v", resp.Message)
 }
 
+func addMember(name, number string) {
+	if _, err := db.Exec("CREATE TABLE IF NOT EXISTS members (name VARCHAR NOT NULL PRIMARY KEY, number VARCHAR)"); err != nil {
+		log.Printf("Error creating database table: %q", err)
+		return
+	}
+}
+
 func receiveSMSHandler(w http.ResponseWriter, r *http.Request) {
 	sender := r.FormValue("From")
 	body := r.FormValue("Body")
-	var num_rows int
-	db.QueryRow("SELECT COUNT(*) FROM members WHERE name=$1", name).Scan(&num_rows)
-	if num_rows == 0 {
-		if _, err := db.Exec("INSERT INTO members VALUES($1, $2)", name, email); err != nil {
-			log.Fatalf("Couldn't perform insert. %v", err)
+	/*
+		var num_rows int
+		db.QueryRow("SELECT COUNT(*) FROM members WHERE name=$1", name).Scan(&num_rows)
+		if num_rows == 0 {
+			if _, err := db.Exec("INSERT INTO members VALUES($1, $2)", name, email); err != nil {
+				log.Fatalf("Couldn't perform insert. %v", err)
+			}
 		}
-	}
 
-	mod := gmail.ModifyMessageRequest{RemoveLabelIds: []string{"UNREAD"}}
-	if _, err := srv.Users.Messages.Modify("me", m.Id, &mod).Do(); err != nil {
-		log.Fatalf("Couldn't remove unread label from email. %v", err)
-	}
-
+		mod := gmail.ModifyMessageRequest{RemoveLabelIds: []string{"UNREAD"}}
+		if _, err := srv.Users.Messages.Modify("me", m.Id, &mod).Do(); err != nil {
+			log.Fatalf("Couldn't remove unread label from email. %v", err)
+		}
+	*/
 	resp := twiml.NewResponse()
 	resp.Action(twiml.Message{
 		Body: fmt.Sprintf("Hello, %s, you said: %s", sender, body),
