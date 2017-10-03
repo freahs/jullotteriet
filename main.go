@@ -1,19 +1,17 @@
 package main
 
 import (
+	"bitbucket.org/ckvist/twilio/twiml"
+	"bitbucket.org/ckvist/twilio/twirest"
+	"database/sql"
 	"fmt"
+	sms "github.com/freahs/jullotteri/smshandler"
+	"github.com/gorilla/mux"
+	_ "github.com/lib/pq"
 	"log"
 	"net/http"
 	"os"
 	"strings"
-)
-
-import (
-	"bitbucket.org/ckvist/twilio/twiml"
-	"bitbucket.org/ckvist/twilio/twirest"
-	"database/sql"
-	"github.com/gorilla/mux"
-	_ "github.com/lib/pq"
 )
 
 var (
