@@ -8,6 +8,7 @@ import (
 	"github.com/gorilla/mux"
 	_ "github.com/lib/pq"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 )
@@ -33,6 +34,7 @@ func main() {
 	sms.RegisterHandler("lista", listSMSHandler)
 	sms.RegisterHandler("avbryt", removeSMSHandler)
 	sms.RegisterHandler("jul", addSMSHandler)
+	sms.RegisterHandler("starta", lotterySMSHandler)
 
 	tclient := twirest.NewClient(
 		mustGetenv("TWILIO_ACCOUNT_SID"),
@@ -44,7 +46,6 @@ func main() {
 	r.HandleFunc("/test", testHandler)
 	r.HandleFunc("/sms/receive", sms.TwiloSMSHandler(tclient, tnumber))
 
-	// Bind to a port and pass our router in
 	port := mustGetenv("PORT")
 	log.Fatal(http.ListenAndServe(":"+port, r))
 }
@@ -82,14 +83,27 @@ func addSMSHandler(from, body string) string {
 	return "Du är nu med i jullotteriet!"
 }
 
+func lotterySMSHandler(from, body string) string {
+	lottery_secret := os.Getenv("LOTTERY_SECRET")
+	if lottery_secret == "" {
+		return "Det finns ingen LOTTERY_SECRET, kan inte starta lotteriet."
+	}
+	if body == "" {
+		return "Ange lösenord för att starta lotteriet."
+	}
+	if body == lottery_secret {
+		doLottery()
+		return "Lotteriet färdigt."
+	}
+	return "Felaktigt lösenord."
+}
+
 func defaultHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Nothing here\n"))
 }
 
 func testHandler(w http.ResponseWriter, r *http.Request) {
-	insert := addMember("test", "asdf")
-	fmt.Fprintf(w, "%v", insert)
-
+	fmt.Fprintf(w, "%v", "test")
 }
 
 /*
@@ -170,54 +184,50 @@ func getMembers() ([]string, error) {
 		members = append(members, m)
 	}
 	return members, nil
-
 }
 
-/*
-func receiveSMSHandler(w http.ResponseWriter, r *http.Request) {
-	sender := r.FormValue("From")
-	body := strings.ToLower(r.FormValue("Body"))
-
-	mess := twiml.Message{
-		From: twilioNumber,
-		To:   sender,
+func doLottery() {
+	rows, err := db.Query("SELECT * FROM members")
+	if err != nil {
+		log.Printf("Could not fetch members from DB: %v", err)
 	}
 
-	if body == "lista" {
-		m, err := getMembers()
-		if err != nil {
-			log.Printf("Error while getting members: %q", err)
-			mess.Body = "Något gick fel :("
-		} else {
-			str := "Deltagare i jullotteriet: "
-			for i := 0; i < len(m); i++ {
-				str = str + m[i]
-				if i < len(m)-1 {
-					str = str + ", "
+	numbers := make(map[string]string)
+	var members []string
+
+	defer rows.Close()
+	for rows.Next() {
+		var number, name string
+		if err := rows.Scan(&number, &name); err != nil {
+			log.Fatalf("Error while scanning row: %v", err)
+		}
+		numbers[name] = number
+		members = append(members, name)
+	}
+
+	pairs := make(map[string]string)
+	if len(members) == 1 {
+		pairs[members[0]] = members[0]
+	} else if len(members) > 1 {
+		done := false
+		var list []int
+		for !done {
+			list = rand.Perm(len(members))
+			done = true
+			for i := 0; i < len(list); i++ {
+				if list[i] == i {
+					done = false
 				}
-			}
-			mess.Body = str
-		}
-
-	} else if body == "avbryt" {
-		mess.Body = "Du är borttagen från jullotteriet"
-		ok := removeMember(sender)
-		if !ok {
-			mess.Body = "Kunde inte ta bort dig från jullotteriet, kanske är du inte registrerad?"
-		}
-	} else if body[:3] == "jul" {
-		mess.Body = "Du är nu med i jullotteriet!"
-		if len(body) < 5 {
-			mess.Body = "Du måste ange ett namn också (skriv JUL ditt namn)"
-		} else {
-			ok := addMember(body[4:], sender)
-			if !ok {
-				mess.Body = "Kunde inte lägga till dig till jullotteriet, kanske är du redan registrerad?"
+				pairs[members[i]] = members[list[i]]
 			}
 		}
 	}
-	resp := twiml.NewResponse()
-	resp.Action(mess)
-	resp.Send(w)
+
+	for k, v := range pairs {
+		sendSMS(numbers[k], "Du ska köpa en julklapp till "+v)
+	}
 }
-*/
+
+func sendSMS(number, message string) {
+	log.Printf("sending sms to %v, message %q", number, message)
+}
