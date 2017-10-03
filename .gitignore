@@ -1,3 +1,3 @@
 .env
-.swp
+*.swp
 setenv.sh
