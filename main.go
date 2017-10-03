@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bitbucket.org/ckvist/twilio/twiml"
 	"bitbucket.org/ckvist/twilio/twirest"
 	"database/sql"
 	"fmt"
@@ -11,16 +10,9 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings"
 )
 
-var (
-	twilioClient = twirest.NewClient(
-		mustGetenv("TWILIO_ACCOUNT_SID"),
-		mustGetenv("TWILIO_AUTH_TOKEN"))
-	twilioNumber = mustGetenv("TWILIO_NUMBER")
-	db           *sql.DB
-)
+var db *sql.DB
 
 func mustGetenv(k string) string {
 	v := os.Getenv(k)
@@ -30,21 +22,64 @@ func mustGetenv(k string) string {
 	return v
 }
 
-func main() {
+func init() {
 	var err error
-	db, err = sql.Open("postgres", mustGetenv("DATABASE_URL"))
-	if err != nil {
+	if db, err = sql.Open("postgres", mustGetenv("DATABASE_URL")); err != nil {
 		log.Fatalf("Error opening database: %q", err)
 	}
-	//sendSMS("+46720258512")
+}
+
+func main() {
+	sms.RegisterHandler("lista", listSMSHandler)
+	sms.RegisterHandler("avbryt", removeSMSHandler)
+	sms.RegisterHandler("jul", addSMSHandler)
+
+	tclient := twirest.NewClient(
+		mustGetenv("TWILIO_ACCOUNT_SID"),
+		mustGetenv("TWILIO_AUTH_TOKEN"))
+	tnumber := mustGetenv("TWILIO_NUMBER")
 
 	r := mux.NewRouter()
 	r.HandleFunc("/", defaultHandler)
 	r.HandleFunc("/test", testHandler)
-	r.HandleFunc("/sms/receive", receiveSMSHandler)
+	r.HandleFunc("/sms/receive", sms.TwiloSMSHandler(tclient, tnumber))
 
 	// Bind to a port and pass our router in
-	log.Fatal(http.ListenAndServe(":"+mustGetenv("PORT"), r))
+	port := mustGetenv("PORT")
+	log.Fatal(http.ListenAndServe(":"+port, r))
+}
+
+func listSMSHandler(from, body string) string {
+	m, err := getMembers()
+	if err != nil {
+		log.Printf("Error while getting members: %q", err)
+		return "Något gick fel :("
+	}
+	ret := "Deltagare i jullotteriet: "
+	for i := 0; i < len(m); i++ {
+		ret += m[i]
+		if i < len(m)-1 {
+			ret += ", "
+		}
+	}
+	return ret + "."
+}
+
+func removeSMSHandler(from, body string) string {
+	if !removeMember(from) {
+		return "Kunde inte ta bort dig från jullotteriet, kanske är du inte registrerad?"
+	}
+	return "Du är borttagen från jullotteriet"
+}
+
+func addSMSHandler(from, body string) string {
+	if body == "" {
+		return "Du måste ange ett namn också (skriv JUL ditt namn)"
+	}
+	if !addMember(from, body) {
+		return "Kunde inte lägga till dig till jullotteriet, kanske är du redan registrerad?"
+	}
+	return "Du är nu med i jullotteriet!"
 }
 
 func defaultHandler(w http.ResponseWriter, r *http.Request) {
@@ -57,6 +92,7 @@ func testHandler(w http.ResponseWriter, r *http.Request) {
 
 }
 
+/*
 func sendSMS(to string) {
 	if to == "" {
 		log.Printf("Missing 'to' parameter.")
@@ -76,8 +112,9 @@ func sendSMS(to string) {
 
 	log.Printf("SMS sent successfully. Response:\n%#v", resp.Message)
 }
+*/
 
-func addMember(name, number string) bool {
+func addMember(number, name string) bool {
 	if _, err := db.Exec("CREATE TABLE IF NOT EXISTS members (number VARCHAR NOT NULL PRIMARY KEY, name VARCHAR)"); err != nil {
 		log.Printf("addMember: %q", err)
 		return false
@@ -136,6 +173,7 @@ func getMembers() ([]string, error) {
 
 }
 
+/*
 func receiveSMSHandler(w http.ResponseWriter, r *http.Request) {
 	sender := r.FormValue("From")
 	body := strings.ToLower(r.FormValue("Body"))
@@ -182,3 +220,4 @@ func receiveSMSHandler(w http.ResponseWriter, r *http.Request) {
 	resp.Action(mess)
 	resp.Send(w)
 }
+*/
