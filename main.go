@@ -3,7 +3,6 @@ package main
 import (
 	"bitbucket.org/ckvist/twilio/twirest"
 	"database/sql"
-	"fmt"
 	sms "github.com/freahs/jullotteri/smshandler"
 	"github.com/gorilla/mux"
 	_ "github.com/lib/pq"
@@ -14,6 +13,8 @@ import (
 )
 
 var db *sql.DB
+var tclient *twirest.TwilioClient
+var tnumber string
 
 func mustGetenv(k string) string {
 	v := os.Getenv(k)
@@ -28,6 +29,11 @@ func init() {
 	if db, err = sql.Open("postgres", mustGetenv("DATABASE_URL")); err != nil {
 		log.Fatalf("Error opening database: %q", err)
 	}
+
+	tclient = twirest.NewClient(
+		mustGetenv("TWILIO_ACCOUNT_SID"),
+		mustGetenv("TWILIO_AUTH_TOKEN"))
+	tnumber = mustGetenv("TWILIO_NUMBER")
 }
 
 func main() {
@@ -36,18 +42,16 @@ func main() {
 	sms.RegisterHandler("jul", addSMSHandler)
 	sms.RegisterHandler("starta", lotterySMSHandler)
 
-	tclient := twirest.NewClient(
-		mustGetenv("TWILIO_ACCOUNT_SID"),
-		mustGetenv("TWILIO_AUTH_TOKEN"))
-	tnumber := mustGetenv("TWILIO_NUMBER")
-
 	r := mux.NewRouter()
 	r.HandleFunc("/", defaultHandler)
-	r.HandleFunc("/test", testHandler)
 	r.HandleFunc("/sms/receive", sms.TwiloSMSHandler(tclient, tnumber))
 
 	port := mustGetenv("PORT")
 	log.Fatal(http.ListenAndServe(":"+port, r))
+}
+
+func defaultHandler(w http.ResponseWriter, r *http.Request) {
+	w.Write([]byte("Nothing here\n"))
 }
 
 func listSMSHandler(from, body string) string {
@@ -97,36 +101,6 @@ func lotterySMSHandler(from, body string) string {
 	}
 	return "Felaktigt lösenord."
 }
-
-func defaultHandler(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("Nothing here\n"))
-}
-
-func testHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "%v", "test")
-}
-
-/*
-func sendSMS(to string) {
-	if to == "" {
-		log.Printf("Missing 'to' parameter.")
-		return
-	}
-	msg := twirest.SendMessage{
-		Text: "Hello from App Engine!",
-		From: twilioNumber,
-		To:   to,
-	}
-
-	resp, err := twilioClient.Request(msg)
-	if err != nil {
-		log.Printf("Could not send SMS: %v", err)
-		return
-	}
-
-	log.Printf("SMS sent successfully. Response:\n%#v", resp.Message)
-}
-*/
 
 func addMember(number, name string) bool {
 	if _, err := db.Exec("CREATE TABLE IF NOT EXISTS members (number VARCHAR NOT NULL PRIMARY KEY, name VARCHAR)"); err != nil {
@@ -229,54 +203,12 @@ func doLottery() {
 }
 
 func sendSMS(number, message string) {
-	log.Printf("sending sms to %v, message %q", number, message)
-}
-
-/*
-func receiveSMSHandler(w http.ResponseWriter, r *http.Request) {
-	sender := r.FormValue("From")
-	body := strings.ToLower(r.FormValue("Body"))
-
-	mess := twiml.Message{
-		From: twilioNumber,
-		To:   sender,
+	if _, err := tclient.Request(twirest.SendMessage{
+		Text: message,
+		From: tnumber,
+		To:   number,
+	}); err != nil {
+		log.Printf("Could not send SMS: %v", err)
+		return
 	}
-
-	if body == "lista" {
-		m, err := getMembers()
-		if err != nil {
-			log.Printf("Error while getting members: %q", err)
-			mess.Body = "Något gick fel :("
-		} else {
-			str := "Deltagare i jullotteriet: "
-			for i := 0; i < len(m); i++ {
-				str = str + m[i]
-				if i < len(m)-1 {
-					str = str + ", "
-				}
-			}
-			mess.Body = str
-		}
-
-	} else if body == "avbryt" {
-		mess.Body = "Du är borttagen från jullotteriet"
-		ok := removeMember(sender)
-		if !ok {
-			mess.Body = "Kunde inte ta bort dig från jullotteriet, kanske är du inte registrerad?"
-		}
-	} else if body[:3] == "jul" {
-		mess.Body = "Du är nu med i jullotteriet!"
-		if len(body) < 5 {
-			mess.Body = "Du måste ange ett namn också (skriv JUL ditt namn)"
-		} else {
-			ok := addMember(body[4:], sender)
-			if !ok {
-				mess.Body = "Kunde inte lägga till dig till jullotteriet, kanske är du redan registrerad?"
-			}
-		}
-	}
-	resp := twiml.NewResponse()
-	resp.Action(mess)
-	resp.Send(w)
 }
-*/
