@@ -231,3 +231,52 @@ func doLottery() {
 func sendSMS(number, message string) {
 	log.Printf("sending sms to %v, message %q", number, message)
 }
+
+/*
+func receiveSMSHandler(w http.ResponseWriter, r *http.Request) {
+	sender := r.FormValue("From")
+	body := strings.ToLower(r.FormValue("Body"))
+
+	mess := twiml.Message{
+		From: twilioNumber,
+		To:   sender,
+	}
+
+	if body == "lista" {
+		m, err := getMembers()
+		if err != nil {
+			log.Printf("Error while getting members: %q", err)
+			mess.Body = "Något gick fel :("
+		} else {
+			str := "Deltagare i jullotteriet: "
+			for i := 0; i < len(m); i++ {
+				str = str + m[i]
+				if i < len(m)-1 {
+					str = str + ", "
+				}
+			}
+			mess.Body = str
+		}
+
+	} else if body == "avbryt" {
+		mess.Body = "Du är borttagen från jullotteriet"
+		ok := removeMember(sender)
+		if !ok {
+			mess.Body = "Kunde inte ta bort dig från jullotteriet, kanske är du inte registrerad?"
+		}
+	} else if body[:3] == "jul" {
+		mess.Body = "Du är nu med i jullotteriet!"
+		if len(body) < 5 {
+			mess.Body = "Du måste ange ett namn också (skriv JUL ditt namn)"
+		} else {
+			ok := addMember(body[4:], sender)
+			if !ok {
+				mess.Body = "Kunde inte lägga till dig till jullotteriet, kanske är du redan registrerad?"
+			}
+		}
+	}
+	resp := twiml.NewResponse()
+	resp.Action(mess)
+	resp.Send(w)
+}
+*/
