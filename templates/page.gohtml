@@ -1,0 +1,53 @@
+{{define "head"}}
+
+<!doctype html>
+<html lang="sv">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>"Jullotteriet"</title>
+    <style>
+        p {
+            margin-bottom: 50px;
+        }
+    </style>
+</head>
+<body>
+
+{{end}}
+
+
+{{define "foot"}}
+
+</body>
+</html>
+
+{{end}}
+
+
+{{define "root"}}
+    <h2>Välj ditt namn</h2>
+    <ul>
+        {{range $name, $_ := .Assigned}}
+            <li><a href="{{$name}}">{{$name}}</a></li>
+        {{end}}
+    </ul>
+{{end}}
+
+{{define "wrong-name"}}
+    <h2>SNOKA INTE!</h2>
+    <p><a href="https://www.google.com/search?q=ett+fruktansvärt+svek">förlåt...</a></p>
+    <p><a href="/{{.Name}}/reset">jag valde fel förut, jag lovar!</a></p>
+{{end}}
+
+{{define "name"}}
+    <p><a href="/{{.Name}}/reveal">Jag lovar att jag är {{.Name}} och vill veta vem jag ska ge till!</a></p>
+    <p><a href="/">Oj, jag är inte {{.Name}}</a></p>
+{{end}}
+
+{{define "reveal"}}
+    <p>{{.Name}} ska ge till {{index .Assigned .Name}}</p>
+    <p><a href="/{{.Name}}/reset">Oj, jag är inte {{.Name}}</a></p>
+{{end}}
+
+

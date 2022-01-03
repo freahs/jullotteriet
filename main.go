@@ -1,214 +1,242 @@
 package main
 
 import (
-	"bitbucket.org/ckvist/twilio/twirest"
-	"database/sql"
-	sms "github.com/freahs/jullotteri/smshandler"
+	"fmt"
 	"github.com/gorilla/mux"
-	_ "github.com/lib/pq"
+	"html/template"
 	"log"
-	"math/rand"
+	"net"
 	"net/http"
 	"os"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
 )
 
-var db *sql.DB
-var tclient *twirest.TwilioClient
-var tnumber string
+var (
+	cookieExpires time.Time
+	Assigned      = make(map[string]string)
+)
 
-func mustGetenv(k string) string {
-	v := os.Getenv(k)
-	if v == "" {
-		log.Fatalf("%s environment variable not set.", k)
+func usage() {
+	Name := os.Args[0]
+	fmt.Println(
+		`USAGE: `+Name+` [OPTIONS] NAMES...\n`,
+		`NAMES are the names of the participants\n\n`,
+		`  --file FILE           The path to a file with constraints for the matching`,
+		`  --seed INT            The initial seed`,
+		`  --max_attempts INT    Maximum number of seeds to try before giving up`,
+	)
+}
+
+func GetIp(r *http.Request) string {
+	if fwd := r.Header.Get("x-forwarded-for"); fwd != "" {
+		ips := strings.SplitN(fwd, ",", 2)
+		if len(ips) > 0 {
+			return strings.TrimSpace(ips[0])
+		}
 	}
-	return v
+
+	addr := r.RemoteAddr
+	ip := strings.SplitN(addr, ":", 2)[0]
+	return strings.TrimSpace(ip)
+}
+
+func GetCookie(name string, r *http.Request) string {
+	cookie, err := r.Cookie(name)
+
+	switch err {
+	case nil:
+		return cookie.Value
+	case http.ErrNoCookie:
+		return ""
+	default:
+		panic(err)
+	}
+}
+
+func SetCookie(name, value string, w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:    name,
+		Value:   value,
+		Path:    "/",
+		Expires: cookieExpires,
+	})
+}
+
+func DeleteCookie(name string, w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie(name)
+	if err != nil {
+		panic(err)
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:    name,
+		Value:   "",
+		Path:    "/",
+		Expires: cookie.Expires,
+		MaxAge:  -1,
+	})
+}
+
+func ExecuteTemplate(w http.ResponseWriter, name string, data interface{}) {
+	t, err := template.ParseFiles("templates/page.gohtml")
+	if err != nil {
+		panic(err)
+	}
+	t, err = t.Parse("{{template \"head\" .}}{{template \"" + name + "\" .}}{{template \"foot\" .}}")
+	if err != nil {
+		panic(err)
+	}
+
+	err = t.Execute(w, data)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func ErrorHandler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if x := recover(); x != nil {
+				log.Println(x)
+				s := http.StatusInternalServerError
+				http.Error(w, http.StatusText(s), s)
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
+func ResetHandler(w http.ResponseWriter, r *http.Request) {
+	if claim := GetCookie("claim", r); claim == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	DeleteCookie("claim", w, r)
+	http.Redirect(w, r, "/", http.StatusPermanentRedirect)
+}
+
+func NameHandler(w http.ResponseWriter, r *http.Request) {
+	name := mux.Vars(r)["name"]
+	claim := GetCookie("claim", r)
+	ip := GetIp(r)
+
+	if claim == "" {
+		claim = "none"
+	} else if claim != name {
+		ExecuteTemplate(w, "wrong-name", map[string]interface{}{"Name": name})
+		log.Printf("%v %v claim=%v", ip, name, claim)
+		return
+	}
+
+	ExecuteTemplate(w, "name", map[string]interface{}{"Name": name})
+	log.Printf("%v %v claim=%v", ip, name, claim)
+}
+
+func RevealHandler(w http.ResponseWriter, r *http.Request) {
+	name := mux.Vars(r)["name"]
+	claim := GetCookie("claim", r)
+	ip := GetIp(r)
+
+	if claim == "" {
+		SetCookie("claim", name, w)
+		http.Redirect(w, r, "/"+name+"/reveal", http.StatusPermanentRedirect)
+	} else if claim == name {
+		ExecuteTemplate(w, "reveal", map[string]interface{}{"Name": name, "Assigned": Assigned})
+		log.Printf("%v %v claim=%v", ip, name, claim)
+	}
+}
+
+func RootHandler(w http.ResponseWriter, r *http.Request) {
+	if name := GetCookie("claim", r); name != "" {
+		http.Redirect(w, r, "/"+name, http.StatusPermanentRedirect)
+		return
+	}
+	ExecuteTemplate(w, "root", map[string]interface{}{"Assigned": Assigned})
 }
 
 func init() {
-	var err error
-	if db, err = sql.Open("postgres", mustGetenv("DATABASE_URL")); err != nil {
-		log.Fatalf("Error opening database: %q", err)
+	year := time.Now().Year()
+	month := int(time.December)
+	day := 25
+
+	err := func() error {
+		val, ok := os.LookupEnv("COOKIE_EXPIRES")
+		if !ok {
+			return nil
+		}
+		re := regexp.MustCompile(`^(\d{4})(\d{2})(\d{2})$`)
+		res := re.FindStringSubmatch(val)
+		if len(res) != 4 {
+			return fmt.Errorf("invalid format string %v", val)
+		}
+		var err error
+		if year, err = strconv.Atoi(res[1]); err != nil {
+			return fmt.Errorf("invalid year format: %v", res[1])
+		}
+		if month, err = strconv.Atoi(res[2]); err != nil {
+			return fmt.Errorf("invalid month format: %v", res[2])
+		}
+		if day, err = strconv.Atoi(res[3]); err != nil {
+			return fmt.Errorf("invalid day format: %v", res[3])
+		}
+		return nil
+	}()
+
+	if err != nil {
+		log.Fatalf("error parsing COOKIE_EXPIRES: %v", err)
 	}
 
-	tclient = twirest.NewClient(
-		mustGetenv("TWILIO_ACCOUNT_SID"),
-		mustGetenv("TWILIO_AUTH_TOKEN"))
-	tnumber = mustGetenv("TWILIO_NUMBER")
+	cookieExpires = time.Date(year, time.December, 25, 0, 0, 0, 0, time.Local)
+
 }
 
 func main() {
-	sms.RegisterHandler("lista", listSMSHandler)
-	sms.RegisterHandler("avbryt", removeSMSHandler)
-	sms.RegisterHandler("jul", addSMSHandler)
-	sms.RegisterHandler("starta", lotterySMSHandler)
 
-	r := mux.NewRouter()
-	r.HandleFunc("/", defaultHandler)
-	r.HandleFunc("/sms/receive", sms.TwiloSMSHandler(tclient, tnumber))
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("error: %v", r)
+			usage()
+		}
+	}()
 
-	port := mustGetenv("PORT")
-	log.Fatal(http.ListenAndServe(":"+port, r))
-}
-
-func defaultHandler(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("Nothing here\n"))
-}
-
-func listSMSHandler(from, body string) string {
-	m, err := getMembers()
+	args, err := ParseArgs(os.Args[1:])
 	if err != nil {
-		log.Printf("Error while getting members: %q", err)
-		return "Något gick fel :("
+		panic(err)
 	}
-	ret := "Deltagare i jullotteriet: "
-	for i := 0; i < len(m); i++ {
-		ret += m[i]
-		if i < len(m)-1 {
-			ret += ", "
+
+	log.Printf("starting with the following participants")
+	for name, constraints := range args.Constraints {
+		if len(constraints) == 0 {
+			log.Printf("  •%v", name)
+		} else {
+			log.Printf("  •%v (will not be assigned to %v)", name, strings.Join(constraints, ", "))
 		}
 	}
-	return ret + "."
-}
 
-func removeSMSHandler(from, body string) string {
-	if !removeMember(from) {
-		return "Kunde inte ta bort dig från jullotteriet, kanske är du inte registrerad?"
-	}
-	return "Du är borttagen från jullotteriet"
-}
-
-func addSMSHandler(from, body string) string {
-	if body == "" {
-		return "Du måste ange ett namn också (skriv JUL ditt namn)"
-	}
-	if !addMember(from, body) {
-		return "Kunde inte lägga till dig till jullotteriet, kanske är du redan registrerad?"
-	}
-	return "Du är nu med i jullotteriet!"
-}
-
-func lotterySMSHandler(from, body string) string {
-	lottery_secret := os.Getenv("LOTTERY_SECRET")
-	if lottery_secret == "" {
-		return "Det finns ingen LOTTERY_SECRET, kan inte starta lotteriet."
-	}
-	if body == "" {
-		return "Ange lösenord för att starta lotteriet."
-	}
-	if body == lottery_secret {
-		doLottery()
-		return "Lotteriet färdigt."
-	}
-	return "Felaktigt lösenord."
-}
-
-func addMember(number, name string) bool {
-	if _, err := db.Exec("CREATE TABLE IF NOT EXISTS members (number VARCHAR NOT NULL PRIMARY KEY, name VARCHAR)"); err != nil {
-		log.Printf("addMember: %q", err)
-		return false
-	}
-
-	var num_rows int
-	if err := db.QueryRow("SELECT count(*) FROM members WHERE number=$1", number).Scan(&num_rows); err != nil {
-		log.Printf("addMember: %q", err)
-		return false
-	}
-
-	if num_rows != 0 {
-		return false
-	}
-
-	if _, err := db.Exec("INSERT INTO members VALUES ($1, $2)", number, name); err != nil {
-		log.Printf("addMember: %q", err)
-		return false
-	}
-
-	return true
-}
-
-func removeMember(number string) bool {
-	var num_rows int
-	if err := db.QueryRow("SELECT count(*) FROM members WHERE number=$1", number).Scan(&num_rows); err != nil {
-		log.Printf("removeMember: %q", err)
-		return false
-	}
-	if num_rows == 0 {
-		return false
-	}
-	if _, err := db.Exec("DELETE FROM members WHERE number=$1", number); err != nil {
-		log.Printf("removeMember: %q", err)
-		return false
-	}
-	return true
-}
-
-func getMembers() ([]string, error) {
-	rows, err := db.Query("SELECT name FROM members")
+	assigned, err := args.Assign()
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
-	defer rows.Close()
-	var members []string
-	for rows.Next() {
-		var m string
-		if err := rows.Scan(&m); err != nil {
-			return nil, err
-		}
 
-		members = append(members, m)
+	if len(assigned) == 0 {
+		panic(fmt.Errorf("no participants"))
 	}
-	return members, nil
-}
 
-func doLottery() {
-	rows, err := db.Query("SELECT * FROM members")
+	router := mux.NewRouter()
+	router.Use(ErrorHandler)
+	router.HandleFunc("/{name}/reset", ResetHandler)
+	router.HandleFunc("/{name}/reveal", RevealHandler)
+	router.HandleFunc("/{name}", NameHandler)
+	router.HandleFunc("/", RootHandler)
+
+	server := &http.Server{Handler: router}
+	l, err := net.Listen("tcp4", ":8081")
 	if err != nil {
-		log.Printf("Could not fetch members from DB: %v", err)
+		panic(err)
 	}
 
-	numbers := make(map[string]string)
-	var members []string
-
-	defer rows.Close()
-	for rows.Next() {
-		var number, name string
-		if err := rows.Scan(&number, &name); err != nil {
-			log.Fatalf("Error while scanning row: %v", err)
-		}
-		numbers[name] = number
-		members = append(members, name)
-	}
-
-	pairs := make(map[string]string)
-	if len(members) == 1 {
-		pairs[members[0]] = members[0]
-	} else if len(members) > 1 {
-		done := false
-		var list []int
-		for !done {
-			list = rand.Perm(len(members))
-			done = true
-			for i := 0; i < len(list); i++ {
-				if list[i] == i {
-					done = false
-				}
-				pairs[members[i]] = members[list[i]]
-			}
-		}
-	}
-
-	for k, v := range pairs {
-		sendSMS(numbers[k], "Du ska köpa en julklapp till "+v)
-	}
-}
-
-func sendSMS(number, message string) {
-	if _, err := tclient.Request(twirest.SendMessage{
-		Text: message,
-		From: tnumber,
-		To:   number,
-	}); err != nil {
-		log.Printf("Could not send SMS: %v", err)
-		return
-	}
+	err = server.Serve(l)
+	log.Printf("server stopped: %v", err)
 }
