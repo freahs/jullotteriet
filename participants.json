@@ -1,6 +1,6 @@
 {
-    "faster": ["fasters partner"],
-    "fasters partner": ["faster"],
-    "moster": [],
-    "farbror": []
+    "Alice": ["Bob"],
+    "Bob": ["Alice"],
+    "Charlie": ["David"],
+    "David": ["Charlie"]
 }

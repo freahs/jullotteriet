@@ -1,3 +1,2 @@
 .env
-*.swp
-setenv.sh
+*.base64

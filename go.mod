@@ -1,9 +1,7 @@
 module jullotteriet
 
-go 1.15
+go 1.23
 
-require (
-	github.com/google/uuid v1.3.0
-	github.com/gorilla/context v1.1.1
-	github.com/gorilla/mux v1.8.0
-)
+toolchain go1.23.4
+
+require github.com/gorilla/mux v1.8.1
